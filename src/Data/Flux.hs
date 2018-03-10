@@ -144,7 +144,7 @@ plug r w f = void $ forkIO (void $ flux r w f)
           w <! y
           flux r w f'
 
-forever :: Flux () ()
+forever :: Flux () a
        -> IO ()
 forever (Flux f) = do
   next <- snd <$> f ()
