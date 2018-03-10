@@ -2,11 +2,14 @@
 
 module Main where
 
-import           Control.Arrow      (returnA, (<<<), (>>>))
-import           Control.Concurrent (forkIO, threadDelay)
+import           Control.Arrow      ((&&&), (<<<), (>>>))
 import           Data.Flux
 import           Data.List          (delete)
 import           Data.Maybe         (maybe)
+import           Data.Text          (Text)
+import           Data.Time.Clock    (getCurrentTime)
+import           Network.Socket     (withSocketsDo)
+import qualified Network.WebSockets as WS
 import           SDL
 
 data Direction = L
@@ -18,10 +21,12 @@ data Direction = L
 data Cmd = StartMoving
          | StopMoving
          | ChangeDirection Direction
+         | ServerNotification Text
   deriving (Show)
 
 newtype InputManager = InputManager [Direction]
 
+defaultInputManager :: InputManager
 defaultInputManager = InputManager []
 
 emptyManager :: InputManager -> Bool
@@ -74,18 +79,37 @@ keyboard man = Producer $ do
 
   pure (inputManagerCmd man man', keyboard man')
 
+fromServer :: WS.Connection -> Producer Cmd
+fromServer ws = Producer $ do
+  msg <- WS.receiveData ws
+  pure ([ServerNotification msg], fromServer ws)
+
+toServer :: WS.Connection -> Consumer Cmd
+toServer ws = Consumer $ \x -> do
+  case x of
+    ChangeDirection U -> WS.sendTextData ws ("UP" :: Text)
+    ChangeDirection D -> WS.sendTextData ws ("DOWN" :: Text)
+    ChangeDirection L -> WS.sendTextData ws ("LEFT" :: Text)
+    ChangeDirection R -> WS.sendTextData ws ("RIGHT" :: Text)
+    StartMoving       -> WS.sendTextData ws ("MOVE" :: Text)
+    StopMoving        -> WS.sendTextData ws ("STOP" :: Text)
+    _                 -> pure ()
+  pure (toServer ws)
+
 logger :: Consumer Cmd
 logger = Consumer $ \cmd -> do
-  print cmd
+  now <- getCurrentTime
+  putStrLn $ "[" ++ show now ++ "]: " ++ show cmd
   pure logger
 
 main :: IO ()
-main = do
+main = withSocketsDo $ WS.runClient "demo.lkn.ist" 80 "/ws" $ \ws -> do
   initializeAll
-  window   <- createWindow "Data.Flux test application" defaultWindow
-  renderer <- createRenderer window (-1) defaultRenderer
+  _ <- createWindow "Data.Flux test application" defaultWindow
 
+  fs <- source $ fromServer ws
   k <- source $ keyboard defaultInputManager
   l <- sink logger
+  ts <- sink $ toServer ws
 
-  forever (input k >>> output l)
+  forever (select [k, fs] >>> (output l &&& output ts))

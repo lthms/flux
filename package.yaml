@@ -28,7 +28,7 @@ library:
   - async
 
 executables:
-  flux-exe:
+  lykanc:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -38,6 +38,10 @@ executables:
     dependencies:
     - flux
     - sdl2
+    - time
+    - text
+    - websockets
+    - network
 
 tests:
   flux-test:
