@@ -20,7 +20,7 @@ import           Control.Concurrent           (forkIO)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TChan as T
-import           Control.Monad                (void)
+import           Control.Monad                (mapM_, void)
 import           Control.Monad.Fix
 import           Control.Monad.IO.Class
 import           Data.Void                    (Void)
@@ -71,12 +71,12 @@ instance Arrow Flux where
     (y, g') <- wait pg
     pure ((x, y), f' *** g')
 
-newtype Producer i = Producer (IO (i, Producer i))
+newtype Producer i = Producer (IO ([i], Producer i))
 
 instance Functor Producer where
   fmap f (Producer p) = Producer $ do
     (x, next) <- p
-    pure (f x, fmap f next)
+    pure (f <$> x, fmap f next)
 
 instance Applicative Producer where
   (Producer pf) <*> (Producer px) = Producer $ do
@@ -84,9 +84,9 @@ instance Applicative Producer where
     ax <- async px
     (f, fnext) <- wait af
     (x, xnext) <- wait ax
-    pure (f x, fnext <*> xnext)
+    pure (f <*> x, fnext <*> xnext)
 
-  pure x = Producer $ pure (x, pure x)
+  pure x = Producer $ pure ([x], pure x)
 
 source :: Producer i
        -> IO (Source i)
@@ -96,8 +96,8 @@ source s = do
   pure r
   where
     step w (Producer s) = do
-      (x, next) <- s
-      w <! x
+      (lx, next) <- s
+      mapM_ (w <!) lx
       step w next
 
 input :: Source i
