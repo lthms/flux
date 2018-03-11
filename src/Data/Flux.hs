@@ -1,18 +1,23 @@
 module Data.Flux
-  ( Flux(..)
-  , constant
-  , Producer(..)
+  ( Producer(..)
   , Consumer(..)
+  , Flux(..)
   , Source
-  , source
-  , input
   , Sink
+  -- * Podes
+  , source
   , sink
+  , plugR
+  , plugL
+  , plug
+  , pipe
+  , forever
+  -- * Flux
+  , constant
+  , input
   , output
   , select
-  , flux
   , delay
-  , forever
   ) where
 
 import           Control.Arrow
@@ -128,29 +133,52 @@ output w = Flux $ \x -> do
   w <! x
   pure ((), output w)
 
-flux :: Source i -- ^ Can be reused
-     -> Flux i o
-     -> IO (Source o)
-flux (Source r) f = do
-  rd <- atomically $ T.dupTChan r
-  (r', w) <- newChan
-  plug (Source rd) w f
-  pure r'
+pipe :: Flux i o
+     -> IO (Sink i, Source o)
+pipe f = do
+  (ri, wi) <- newChan
+  (ro, wo) <- newChan
+  void $ forkIO (step ri wo f)
+  pure (wi, ro)
+  where
+    step ri wo (Flux g) = do
+      x <- readSource ri
+      (y, next) <- g x
+      wo <! y
+      step ri wo next
 
-plug :: Source i -> Sink o -> Flux i o -> IO ()
-plug r w f = void $ forkIO (void $ flux r w f)
-  where flux :: Source i -> Sink o -> Flux i o -> IO Forever
-        flux r w (Flux f) = do
-          x <- readSource r
-          (y, f') <- f x
-          w <! y
-          flux r w f'
+plugL :: Source i
+      -> Flux i o
+      -> IO (Source o)
+plugL (Source r) f = do
+  ri <- atomically $ T.dupTChan r
+  (ro, wo) <- newChan
+  plug (Source ri) f wo
+  pure ro
+
+plugR :: Flux i o
+      -> Sink o
+      -> IO (Sink i)
+plugR f wo = do
+  (ri, wi) <- newChan
+  plug ri f wo
+  pure wi
+
+plug :: Source i
+     -> Flux i o
+     -> Sink o
+     -> IO ()
+plug r f w = void . forkIO $ step r w f
+  where
+    step ri wo (Flux g) = do
+      x <- readSource ri
+      (y, next) <- g x
+      wo <! y
+      step ri wo next
 
 forever :: Flux () a
        -> IO ()
-forever (Flux f) = do
-  next <- snd <$> f ()
-  forever next
+forever (Flux f) = snd <$> f () >>= forever
 
 delay :: a
       -> Flux a a
