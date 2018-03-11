@@ -26,6 +26,7 @@ library:
   dependencies:
   - stm
   - async
+  - time
 
 executables:
   lykanc:
