@@ -173,6 +173,9 @@ instance (Num o) => Num (Flux i o) where
   fromInteger = fromInteger >>> constant
   abs = (>>> arr abs)
 
+instance (Monoid o) => Monoid (Flux i o) where
+  mempty = constant mempty
+  mappend = app2 mappend
 
 {-
 instance ArrowLoop Flux where
