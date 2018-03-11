@@ -17,6 +17,7 @@ module Data.Flux
   -- ** Local
   -- | This will use the current thread (and therefore blocks).
   , forever
+  , once
   -- * Flux
   , constant
   , input
@@ -64,6 +65,18 @@ newtype Flux i o = Flux (i -> IO (o, Flux i o))
 constant :: o -> Flux i o
 constant x = Flux $ \_ -> pure (x, constant x)
 
+instance Functor (Flux i) where
+  fmap f (Flux g) = Flux $ \x -> do
+    (y, next) <- g x
+    pure (f y, fmap f next)
+
+instance Applicative (Flux i) where
+  pure = constant
+
+  (Flux f) <*> (Flux g) = Flux $ \x -> do
+    ((h, nextf), (y, nextg)) <- join $ waitBoth <$> async (f x) <*> async (g x)
+    pure (h y, nextf <*> nextg)
+
 instance Category Flux where
   id = Flux $ \i -> pure (i, id)
 
@@ -101,13 +114,13 @@ instance Applicative Producer where
 
 source :: Producer i
        -> IO (Source i)
-source s = do
+source p = do
   (r, w) <- newChan
-  forkIO (step w s)
+  void $ forkIO (step w p)
   pure r
   where
-    step w (Producer s) = do
-      (lx, next) <- s
+    step w (Producer prod) = do
+      (lx, next) <- prod
       mapM_ (w <!) lx
       step w next
 
@@ -123,12 +136,12 @@ sink :: Consumer o
      -> IO (Sink o)
 sink c = do
   (r, w) <- newChan
-  forkIO (step r c)
+  void $ forkIO (step r c)
   pure w
   where
-    step r (Consumer c) = do
+    step r (Consumer cs) = do
       x <- readSource r
-      next <- c x
+      next <- cs x
       step r next
 
 output :: Sink o
@@ -178,18 +191,21 @@ forever :: Flux () a
        -> IO ()
 forever (Flux f) = snd <$> f () >>= forever
 
+once :: i
+     -> Flux i a
+     -> IO a
+once x (Flux f) = fst <$> f x
+
 delay :: a
       -> Flux a a
 delay x = Flux $ \y ->
   pure (x, delay y)
 
-app2 :: (o -> o -> o)
-     -> Flux i o
-     -> Flux i o
-     -> Flux i o
-app2 h (Flux f) (Flux g) = Flux $ \x -> do
-    ((a, nextf), (b, nextg)) <- join $ waitBoth <$> async (f x) <*> async (g x)
-    pure (h a b, app2 h nextf nextg)
+app2 :: (a -> b -> c)
+     -> Flux i a
+     -> Flux i b
+     -> Flux i c
+app2 h f g = h <$> f <*> g
 
 instance (Num o) => Num (Flux i o) where
   (+) = app2 (+)
