@@ -1,5 +1,6 @@
 module Data.Flux
   ( Flux(..)
+  , constant
   , Producer(..)
   , Consumer(..)
   , Source
@@ -20,10 +21,8 @@ import           Control.Concurrent           (forkIO)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TChan as T
-import           Control.Monad                (mapM_, void)
+import           Control.Monad                (join, mapM_, void)
 import           Control.Monad.Fix
-import           Control.Monad.IO.Class
-import           Data.Void                    (Void)
 import           Prelude                      hiding (id, (.))
 
 data Forever
@@ -52,6 +51,9 @@ newChan = do
   pure (Source r, Sink w)
 
 newtype Flux i o = Flux (i -> IO (o, Flux i o))
+
+constant :: o -> Flux i o
+constant x = Flux $ \_ -> pure (x, constant x)
 
 instance Category Flux where
   id = Flux $ \i -> pure (i, id)
@@ -154,6 +156,23 @@ delay :: a
       -> Flux a a
 delay x = Flux $ \y ->
   pure (x, delay y)
+
+app2 :: (o -> o -> o)
+     -> Flux i o
+     -> Flux i o
+     -> Flux i o
+app2 h (Flux f) (Flux g) = Flux $ \x -> do
+    ((a, nextf), (b, nextg)) <- join $ waitBoth <$> async (f x) <*> async (g x)
+    pure (h a b, app2 h nextf nextg)
+
+instance (Num o) => Num (Flux i o) where
+  (+) = app2 (+)
+  (*) = app2 (*)
+  negate = (>>> arr negate)
+  signum = (>>> arr signum)
+  fromInteger = fromInteger >>> constant
+  abs = (>>> arr abs)
+
 
 {-
 instance ArrowLoop Flux where
