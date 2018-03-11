@@ -1,3 +1,5 @@
+{-# LANGUAGE RecursiveDo #-}
+
 module Data.Flux
   ( Producer(..)
   , Consumer(..)
@@ -32,10 +34,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TChan as T
 import           Control.Monad                (join, mapM_, void)
-import           Control.Monad.Fix
 import           Prelude                      hiding (id, (.))
-
-data Forever
 
 newtype Source a = Source { unSource :: T.TChan a }
 
@@ -219,9 +218,7 @@ instance (Monoid o) => Monoid (Flux i o) where
   mempty = constant mempty
   mappend = app2 mappend
 
-{-
 instance ArrowLoop Flux where
   loop (Flux f) = Flux $ \x -> do
-    ((y, d), next) <- f (x, d)
+    rec ((y, d), next) <- f (x, d)
     pure (y, loop next)
--}
