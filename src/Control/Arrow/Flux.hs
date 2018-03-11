@@ -1,6 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
 
-module Data.Flux
+module Control.Arrow.Flux
   ( Producer(..)
   , Consumer(..)
   , Flux(..)
@@ -21,7 +21,6 @@ module Data.Flux
   , forever
   , once
   -- * Flux
-  , constant
   , input
   , output
   , delay
@@ -61,16 +60,13 @@ newChan = do
 
 newtype Flux i o = Flux (i -> IO (o, Flux i o))
 
-constant :: o -> Flux i o
-constant x = Flux $ \_ -> pure (x, constant x)
-
 instance Functor (Flux i) where
   fmap f (Flux g) = Flux $ \x -> do
     (y, next) <- g x
     pure (f y, fmap f next)
 
 instance Applicative (Flux i) where
-  pure = constant
+  pure x = Flux $ \_ -> pure (x, pure x)
 
   (Flux f) <*> (Flux g) = Flux $ \x -> do
     ((h, nextf), (y, nextg)) <- join $ waitBoth <$> async (f x) <*> async (g x)
@@ -211,11 +207,11 @@ instance (Num o) => Num (Flux i o) where
   (*) = app2 (*)
   negate = (>>> arr negate)
   signum = (>>> arr signum)
-  fromInteger = fromInteger >>> constant
+  fromInteger = fromInteger >>> pure
   abs = (>>> arr abs)
 
 instance (Monoid o) => Monoid (Flux i o) where
-  mempty = constant mempty
+  mempty = pure mempty
   mappend = app2 mappend
 
 instance ArrowLoop Flux where

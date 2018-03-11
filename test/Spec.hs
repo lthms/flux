@@ -3,10 +3,9 @@
 module Main where
 
 import           Control.Arrow
+import           Control.Arrow.Flux
 import           Control.Concurrent
-import           Control.Exception  (assert)
 import           Control.Monad      (when)
-import           Data.Flux
 import           Data.Time.Clock    (NominalDiffTime, diffUTCTime,
                                      getCurrentTime)
 

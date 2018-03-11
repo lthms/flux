@@ -3,7 +3,7 @@
 module Main where
 
 import           Control.Arrow      ((&&&), (<<<), (>>>))
-import           Data.Flux
+import           Control.Arrow.Flux
 import           Data.List          (delete)
 import           Data.Maybe         (maybe)
 import           Data.Text          (Text)
