@@ -5,18 +5,22 @@ module Data.Flux
   , Source
   , Sink
   -- * Podes
+  -- ** Concurrent
+  -- | This will spawn a new thread.
   , source
+  , select
   , sink
   , plugR
   , plugL
   , plug
   , pipe
+  -- ** Local
+  -- | This will use the current thread (and therefore blocks).
   , forever
   -- * Flux
   , constant
   , input
   , output
-  , select
   , delay
   ) where
 
@@ -138,14 +142,8 @@ pipe :: Flux i o
 pipe f = do
   (ri, wi) <- newChan
   (ro, wo) <- newChan
-  void $ forkIO (step ri wo f)
+  plug ri f wo
   pure (wi, ro)
-  where
-    step ri wo (Flux g) = do
-      x <- readSource ri
-      (y, next) <- g x
-      wo <! y
-      step ri wo next
 
 plugL :: Source i
       -> Flux i o

@@ -1,0 +1,32 @@
+language: generic
+
+sudo: false
+
+cache:
+  directories:
+    - $HOME/.stack
+
+before_install:
+  - wget https://www.libsdl.org/release/SDL2-2.0.5.tar.gz -O SDL2-2.0.5.tar.gz
+  - tar -xzvf SDL2-2.0.5.tar.gz
+  - rm SDL2-2.0.5.tar.gz
+  - mv SDL2-2.0.5 ~
+  - mkdir -p ~/.local/bin
+  - export PATH=~/.local/bin:$PATH
+  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  - chmod a+x ~/.local/bin/stack
+
+install:
+  - (cd ~/SDL2-2.0.5 && ./configure && make && sudo make install)
+  - stack --no-terminal test --only-dependencies
+  - stack --no-terminal install stylish-haskell hlint
+
+script:
+  - find app src test -name '*.hs' -exec stack --no-terminal exec stylish-haskell -- -i {} \;
+  - git status
+  - git status | grep "nothing to commit"
+  - stack --no-terminal exec hlint -- lint src/
+  - stack --no-terminal exec hlint -- lint app/
+  - stack --no-terminal exec hlint -- lint test/
+  - stack --no-terminal test --coverage
+  - stack --no-terminal haddock
