@@ -2,8 +2,8 @@
 
 module Control.Arrow.Flux.Time
   ( hold
-  , now
-  , diffTime
+  , currentTime
+  , elapseTime
   , tick
   ) where
 
@@ -13,7 +13,6 @@ import           Control.Category
 import           Control.Concurrent
 import           Data.Maybe         (fromMaybe)
 import           Data.Time.Clock
-import           Prelude            hiding (id)
 
 tick :: Int -- ^ Microseconds
      -> a   -- ^ The value to send
@@ -28,18 +27,18 @@ hold :: Int -- ^ Microseconds to hold the inputs
 hold n = Flux $ \x -> threadDelay n >> pure (x, hold n)
 
 -- | Ignore the input and returns the current 'UTCTime'.
-now :: Flux a UTCTime
-now = Flux $ \_ -> do
+currentTime :: Flux a UTCTime
+currentTime = Flux $ \_ -> do
   x <- getCurrentTime
-  pure (x, now)
+  pure (x, currentTime)
 
 -- | Ignore the input, and returns the 'DiffTime' since its last input.
 --   treat. The first time, '0' is returned.
-diffTime :: Flux a NominalDiffTime
-diffTime = proc _ -> do
+elapseTime :: Flux a NominalDiffTime
+elapseTime = proc _ -> do
   rec
-    b <- delay Nothing -< st
-    n <- now -< ()
-    st <- id -< Just n
+    before <- delay Nothing -< mnow
+    now <- currentTime -< ()
+    let mnow = Just now
 
-  returnA -< diffUTCTime n (fromMaybe n b)
+  returnA -< diffUTCTime now (fromMaybe now before)
