@@ -1,9 +1,14 @@
+{-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE RecursiveDo #-}
 
 module Control.Arrow.Flux
   ( Producer(..)
   , Consumer(..)
   , Flux(..)
+  , (->>)
+  , (->>*)
+  , (>>-)
+  , (*>>-)
   , Source
   , Sink
   -- * Podes
@@ -40,7 +45,7 @@ newtype Source a = Source { unSource :: T.TChan a }
 readSource :: Source a -> IO a
 readSource (Source chan) = atomically $ T.readTChan chan
 
-select :: [Source a] -- ^ Cannot be reused
+select :: [Source a]
        -> Flux () a
 select srcs = Flux $ \_ -> do
   x <- atomically $ foldl1 orElse (T.readTChan . unSource <$> srcs)
@@ -92,6 +97,30 @@ instance Arrow Flux where
 
 newtype Producer i = Producer (IO ([i], Producer i))
 
+(->>) :: Producer i -> Flux i j -> Producer j
+(Producer p) ->> f = Producer $ do
+  (x, nextp) <- p
+  (y, nextf) <- process x [] f
+  pure (y, nextp ->> nextf)
+  where
+    process :: [i] -> [j] -> Flux i j -> IO ([j], Flux i j)
+    process (x:rst) res (Flux f) = do
+      (y, nextf) <- f x
+      process rst (y:res) nextf
+    process [] res f = pure (reverse res, f)
+
+(->>*) :: Producer i -> Flux i [j] -> Producer j
+(Producer p) ->>* f = Producer $ do
+  (x, nextp) <- p
+  (y, nextf) <- process x [] f
+  pure (y, nextp ->>* nextf)
+  where
+    process :: [i] -> [j] -> Flux i [j] -> IO ([j], Flux i [j])
+    process (x:rst) res (Flux f) = do
+      (y, nextf) <- f x
+      process rst (res ++ y) nextf
+    process [] res f = pure (res, f)
+
 instance Functor Producer where
   fmap f (Producer p) = Producer $ do
     (x, next) <- p
@@ -126,6 +155,21 @@ input s = Flux $ \_ -> do
   pure (x, input s)
 
 newtype Consumer o = Consumer (o -> IO (Consumer o))
+
+(>>-) :: Flux i j -> Consumer j -> Consumer i
+(Flux f) >>- (Consumer c) = Consumer $ \x -> do
+  (y, nextf) <- f x
+  nextc <- c y
+  pure (nextf >>- nextc)
+
+(*>>-) :: Flux i [j] -> Consumer j -> Consumer i
+(Flux f) *>>- c = Consumer $ \x -> do
+  (y, nextf) <- f x
+  nextc <- process y c
+  pure (nextf *>>- nextc)
+  where process :: [j] -> Consumer j -> IO (Consumer j)
+        process (y:rst) (Consumer c) = c y >>= process rst
+        process [] c                 = pure c
 
 sink :: Consumer o
      -> IO (Sink o)
@@ -218,3 +262,12 @@ instance ArrowLoop Flux where
   loop (Flux f) = Flux $ \x -> do
     rec ((y, d), next) <- f (x, d)
     pure (y, loop next)
+
+instance ArrowChoice Flux where
+  (Flux f) +++ (Flux g) = Flux $ \case
+    Left x -> do
+      (y, nextf) <- f x
+      pure (Left y, nextf +++ Flux g)
+    Right x -> do
+      (y, nextg) <- g x
+      pure (Right y, Flux f +++ nextg)

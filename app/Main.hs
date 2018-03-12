@@ -1,8 +1,9 @@
+{-# LANGUAGE Arrows            #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
-import           Control.Arrow      ((&&&), (<<<), (>>>))
+import           Control.Arrow      (returnA, (&&&), (<<<), (>>>))
 import           Control.Arrow.Flux
 import           Data.List          (delete)
 import           Data.Maybe         (maybe)
@@ -10,7 +11,7 @@ import           Data.Text          (Text)
 import           Data.Time.Clock    (getCurrentTime)
 import           Network.Socket     (withSocketsDo)
 import qualified Network.WebSockets as WS
-import           SDL
+import           SDL                hiding (delay)
 
 data Direction = L
                | R
@@ -59,7 +60,7 @@ keyboardEventToDirection kev =
 processKeyboardEvent :: KeyboardEventData -> InputManager -> InputManager
 processKeyboardEvent kev man =
   case keyboardEventKeyMotion kev of
-    Pressed -> maybe man (`addDirection` man) (keyboardEventToDirection kev)
+    Pressed  -> maybe man (`addDirection` man) (keyboardEventToDirection kev)
     Released -> maybe man (`removeDirection` man) (keyboardEventToDirection kev)
 
 inputManagerCmd :: InputManager -> InputManager -> [Cmd]
@@ -70,14 +71,20 @@ inputManagerCmd old new =
       then maybe [] (pure . ChangeDirection) (topDirection new)
       else [])
 
-keyboard :: InputManager -> Producer Cmd
-keyboard man = Producer $ do
-  ev <- waitEvent
-  let man' = case eventPayload ev of
-               KeyboardEvent kev -> processKeyboardEvent kev man
-               _                 -> man
+fromKeyboard :: Producer Cmd
+fromKeyboard = keyboard ->>* inputManager
+  where keyboard = Producer $ do
+          ev <- waitEvent
+          case eventPayload ev of
+            KeyboardEvent kev -> pure ([kev], keyboard)
+            _                 -> pure ([], keyboard)
 
-  pure (inputManagerCmd man man', keyboard man')
+        inputManager = proc kev -> do
+          rec
+            man <- delay defaultInputManager -< man'
+            let man' = processKeyboardEvent kev man
+
+          returnA -< inputManagerCmd man man'
 
 fromServer :: WS.Connection -> Producer Cmd
 fromServer ws = Producer $ do
@@ -108,7 +115,7 @@ main = withSocketsDo $ WS.runClient "demo.lkn.ist" 80 "/ws" $ \ws -> do
   _ <- createWindow "Data.Flux test application" defaultWindow
 
   fs <- source $ fromServer ws
-  k <- source $ keyboard defaultInputManager
+  k <- source fromKeyboard
   l <- sink logger
   ts <- sink $ toServer ws
 
