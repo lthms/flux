@@ -12,7 +12,7 @@ import           Data.Time.Clock    (NominalDiffTime, diffUTCTime,
 wait :: Int -> Producer ()
 wait n = Producer $ do
   threadDelay (n * 1000000)
-  pure ([()], wait n)
+  pure ((), wait n)
 
 delay' :: Int -> Flux a a
 delay' n = Flux $ \x -> threadDelay (n * 1000000) >> pure (x, delay' n)

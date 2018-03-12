@@ -71,14 +71,13 @@ inputManagerCmd old new =
       else [])
 
 fromKeyboard :: Producer Cmd
-fromKeyboard = keyboard ->>* inputManager
+fromKeyboard = enumerate (Producer keyboard ->> inputManager)
   where
-    keyboard :: Producer KeyboardEventData
-    keyboard = Producer $ do
+    keyboard = do
       ev <- waitEvent
       case eventPayload ev of
-        KeyboardEvent kev -> pure ([kev], keyboard)
-        _                 -> pure ([], keyboard)
+        KeyboardEvent kev -> pure (kev, Producer keyboard)
+        _                 -> keyboard
 
     inputManager :: Flux KeyboardEventData [Cmd]
     inputManager = proc kev -> do
@@ -91,7 +90,7 @@ fromKeyboard = keyboard ->>* inputManager
 fromServer :: WS.Connection -> Producer Cmd
 fromServer ws = Producer $ do
   msg <- WS.receiveData ws
-  pure ([ServerNotification msg], fromServer ws)
+  pure (ServerNotification msg, fromServer ws)
 
 toServer :: WS.Connection -> Consumer Cmd
 toServer ws = Consumer $ \x -> do

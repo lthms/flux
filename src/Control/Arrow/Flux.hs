@@ -6,7 +6,8 @@ module Control.Arrow.Flux
   , Consumer(..)
   , Flux(..)
   , (->>)
-  , (->>*)
+  , (*->>)
+  , enumerate
   , (>>-)
   , (*>>-)
   , Source
@@ -95,13 +96,19 @@ instance Arrow Flux where
     (y, g') <- wait pg
     pure ((x, y), f' *** g')
 
-newtype Producer i = Producer (IO ([i], Producer i))
+newtype Producer i = Producer (IO (i, Producer i))
 
 (->>) :: Producer i -> Flux i j -> Producer j
-(Producer p) ->> f = Producer $ do
+(Producer p) ->> (Flux f) = Producer $ do
+  (x, nextp) <- p
+  (y, nextf) <- f x
+  pure (y, nextp ->> nextf)
+
+(*->>) :: Producer [i] -> Flux i j -> Producer [j]
+(Producer p) *->> f = Producer $ do
   (x, nextp) <- p
   (y, nextf) <- process x [] f
-  pure (y, nextp ->> nextf)
+  pure (y, nextp *->> nextf)
   where
     process :: [i] -> [j] -> Flux i j -> IO ([j], Flux i j)
     process (x:rst) res (Flux f) = do
@@ -109,22 +116,17 @@ newtype Producer i = Producer (IO ([i], Producer i))
       process rst (y:res) nextf
     process [] res f = pure (reverse res, f)
 
-(->>*) :: Producer i -> Flux i [j] -> Producer j
-(Producer p) ->>* f = Producer $ do
-  (x, nextp) <- p
-  (y, nextf) <- process x [] f
-  pure (y, nextp ->>* nextf)
+enumerate :: Producer [i] -> Producer i
+enumerate p = Producer $ aux [] p
   where
-    process :: [i] -> [j] -> Flux i [j] -> IO ([j], Flux i [j])
-    process (x:rst) res (Flux f) = do
-      (y, nextf) <- f x
-      process rst (res ++ y) nextf
-    process [] res f = pure (res, f)
+    aux :: [i] -> Producer [i] -> IO (i, Producer i)
+    aux (x:rst) p       = pure (x, Producer $ aux rst p)
+    aux [] (Producer p) = p >>= uncurry aux
 
 instance Functor Producer where
   fmap f (Producer p) = Producer $ do
     (x, next) <- p
-    pure (f <$> x, fmap f next)
+    pure (f x, fmap f next)
 
 instance Applicative Producer where
   (Producer pf) <*> (Producer px) = Producer $ do
@@ -132,9 +134,9 @@ instance Applicative Producer where
     ax <- async px
     (f, fnext) <- wait af
     (x, xnext) <- wait ax
-    pure (f <*> x, fnext <*> xnext)
+    pure (f x, fnext <*> xnext)
 
-  pure x = Producer $ pure ([x], pure x)
+  pure x = Producer $ pure (x, pure x)
 
 source :: Producer i
        -> IO (Source i)
@@ -144,8 +146,8 @@ source p = do
   pure r
   where
     step w (Producer prod) = do
-      (lx, next) <- prod
-      mapM_ (w <!) lx
+      (x, next) <- prod
+      w <! x
       step w next
 
 input :: Source i

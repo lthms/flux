@@ -20,7 +20,7 @@ tick :: Int -- ^ Microseconds
 tick n x = source step
   where step = Producer $ do
           threadDelay n
-          pure ([x], step)
+          pure (x, step)
 
 hold :: Int -- ^ Microseconds to hold the inputs
      -> Flux a a
