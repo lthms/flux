@@ -3,6 +3,7 @@
 
 module Control.Arrow.Flux
   ( Producer(..)
+  , repeatP
   , Consumer(..)
   , Flux(..)
   , (->>)
@@ -99,6 +100,9 @@ instance Arrow Flux where
     pure ((x, y), f' *** g')
 
 newtype Producer i = Producer (IO (i, Producer i))
+
+repeatP :: IO i -> Producer i
+repeatP p = Producer $ p >>= \i -> pure (i, repeatP p)
 
 (->>) :: Producer i -> Flux i j -> Producer j
 (Producer p) ->> (Flux f) = Producer $ do
