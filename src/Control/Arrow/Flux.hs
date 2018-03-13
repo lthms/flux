@@ -7,6 +7,7 @@ module Control.Arrow.Flux
   , Flux(..)
   , (->>)
   , (*->>)
+  , (*->>*)
   , enumerate
   , (>>-)
   , (*>>-)
@@ -39,6 +40,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TChan as T
 import           Control.Monad                (join, mapM_, void)
+import           Data.Foldable                (toList)
 import           Prelude                      hiding (id, (.))
 
 newtype Source a = Source { unSource :: T.TChan a }
@@ -104,17 +106,20 @@ newtype Producer i = Producer (IO (i, Producer i))
   (y, nextf) <- f x
   pure (y, nextp ->> nextf)
 
-(*->>) :: Producer [i] -> Flux i j -> Producer [j]
-(Producer p) *->> f = Producer $ do
+(*->>*) :: (Foldable f) => Producer (f i) -> Flux i j -> Producer [j]
+(Producer p) *->>* f = Producer $ do
   (x, nextp) <- p
-  (y, nextf) <- process x [] f
-  pure (y, nextp *->> nextf)
+  (y, nextf) <- process (toList x) [] f
+  pure (y, nextp *->>* nextf)
   where
     process :: [i] -> [j] -> Flux i j -> IO ([j], Flux i j)
     process (x:rst) res (Flux f) = do
       (y, nextf) <- f x
       process rst (y:res) nextf
     process [] res f = pure (reverse res, f)
+
+(*->>) :: (Foldable f) => Producer (f i) -> Flux i j -> Producer j
+p *->> f = enumerate (p *->>* f)
 
 enumerate :: Producer [i] -> Producer i
 enumerate p = Producer $ aux [] p

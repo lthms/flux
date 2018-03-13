@@ -71,13 +71,14 @@ inputManagerCmd old new =
       else [])
 
 fromKeyboard :: Producer Cmd
-fromKeyboard = enumerate (Producer keyboard ->> inputManager)
+fromKeyboard = enumerate (keyboard *->> inputManager)
   where
-    keyboard = do
+    keyboard :: Producer (Maybe KeyboardEventData)
+    keyboard = Producer $ do
       ev <- waitEvent
       case eventPayload ev of
-        KeyboardEvent kev -> pure (kev, Producer keyboard)
-        _                 -> keyboard
+        KeyboardEvent kev -> pure (Just kev, keyboard)
+        _                 -> pure (Nothing, keyboard)
 
     inputManager :: Flux KeyboardEventData [Cmd]
     inputManager = proc kev -> do
