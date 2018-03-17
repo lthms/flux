@@ -48,14 +48,13 @@ removeDirection :: Direction -> InputManager -> InputManager
 removeDirection dir (InputManager l) = InputManager (dir `delete` l)
 
 keyboardEventToDirection :: KeyboardEventData -> Maybe Direction
-keyboardEventToDirection kev =
-  let keycode = keysymKeycode <<< keyboardEventKeysym $ kev
-  in case keycode of
-       KeycodeUp    -> Just U
-       KeycodeRight -> Just R
-       KeycodeLeft  -> Just L
-       KeycodeDown  -> Just D
-       _            -> Nothing
+keyboardEventToDirection = keyboardEventKeysym >>> keysymKeycode >>> toDir
+  where toDir :: Keycode -> Maybe Direction
+        toDir KeycodeUp    = Just U
+        toDir KeycodeRight = Just R
+        toDir KeycodeLeft  = Just L
+        toDir KeycodeDown  = Just D
+        toDir _            = Nothing
 
 processKeyboardEvent :: KeyboardEventData -> InputManager -> InputManager
 processKeyboardEvent kev man =
