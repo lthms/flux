@@ -31,6 +31,7 @@ module Control.Arrow.Flux
   -- ** Local
   -- | This will use the current thread (and therefore blocks).
   , forever
+  , asLongAs
   , once
   -- * Flux
   , input
@@ -44,7 +45,7 @@ import           Control.Concurrent           (forkIO)
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TChan as T
-import           Control.Monad                (join, mapM_, void)
+import           Control.Monad                (join, mapM_, void, when)
 import           Data.Foldable                (toList)
 import           Prelude                      hiding (id, (.))
 
@@ -262,6 +263,12 @@ plug r f w = void . forkIO $ step r w f
 forever :: Flux () a
        -> IO ()
 forever (Flux f) = snd <$> f () >>= forever
+
+-- | Block the current thread as long as the Flux continue to produce 'True'.
+asLongAs :: Flux () Bool -> IO ()
+asLongAs (Flux f) = do
+  (x, nextf) <- f ()
+  when x $ asLongAs nextf
 
 once :: i
      -> Flux i a
