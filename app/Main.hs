@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows            #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
@@ -92,8 +93,7 @@ fromServer :: WS.Connection -> Producer Cmd
 fromServer ws = repeatP $ ServerNotification <$> WS.receiveData ws
 
 toServer :: WS.Connection -> Consumer Cmd
-toServer ws = repeatC $ \x ->
-  case x of
+toServer ws = repeatC $ \case
     ChangeDirection U -> WS.sendTextData ws ("UP" :: Text)
     ChangeDirection D -> WS.sendTextData ws ("DOWN" :: Text)
     ChangeDirection L -> WS.sendTextData ws ("LEFT" :: Text)
