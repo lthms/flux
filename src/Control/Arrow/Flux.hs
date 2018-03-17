@@ -187,7 +187,7 @@ repeatC :: (o -> IO a) -> Consumer o
 repeatC f = Consumer $ \x -> f x >> pure (repeatC f)
 
 fluxC :: Flux o a -> Consumer o
-fluxC (Flux f) = Consumer $ \x -> fluxC . snd <$> f x
+fluxC (Flux f) = Consumer $ fmap (fluxC . snd) . f
 
 (>>-) :: Flux i j -> Consumer j -> Consumer i
 (Flux f) >>- (Consumer c) = Consumer $ \x -> do
