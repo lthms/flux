@@ -4,17 +4,21 @@
 module Control.Arrow.Flux
   ( Producer(..)
   , repeatP
+  , fluxP
+  , enumP
   , Consumer(..)
+  , repeatC
+  , fluxC
+  , enumC
   , Flux(..)
   , (->>)
   , (*->>)
   , (*->>*)
-  , enumerate
   , (>>-)
   , (*>>-)
+  -- * Podes
   , Source
   , Sink
-  -- * Podes
   -- ** Concurrent
   -- | This will spawn a new thread.
   , source
@@ -104,6 +108,11 @@ newtype Producer i = Producer (IO (i, Producer i))
 repeatP :: IO i -> Producer i
 repeatP p = Producer $ p >>= \i -> pure (i, repeatP p)
 
+fluxP :: Flux () i -> Producer i
+fluxP (Flux f) = Producer $ do
+  (x, fnext) <- f ()
+  pure (x, fluxP fnext)
+
 (->>) :: Producer i -> Flux i j -> Producer j
 (Producer p) ->> (Flux f) = Producer $ do
   (x, nextp) <- p
@@ -123,14 +132,21 @@ repeatP p = Producer $ p >>= \i -> pure (i, repeatP p)
     process [] res f = pure (reverse res, f)
 
 (*->>) :: (Foldable f) => Producer (f i) -> Flux i j -> Producer j
-p *->> f = enumerate (p *->>* f)
+p *->> f = enumP (p *->>* f)
 
-enumerate :: Producer [i] -> Producer i
-enumerate p = Producer $ aux [] p
+enumP :: (Foldable f) => Producer (f i) -> Producer i
+enumP p = Producer $ aux [] (toList <$> p)
   where
     aux :: [i] -> Producer [i] -> IO (i, Producer i)
     aux (x:rst) p       = pure (x, Producer $ aux rst p)
     aux [] (Producer p) = p >>= uncurry aux
+
+enumC :: (Foldable f) => Consumer o -> Consumer (f o)
+enumC c = Consumer $ \f -> enumC <$> aux (toList f) c
+  where
+    aux :: [o] -> Consumer o -> IO (Consumer o)
+    aux [] c                 = pure c
+    aux (x:rst) (Consumer c) = c x >>= aux rst
 
 instance Functor Producer where
   fmap f (Producer p) = Producer $ do
@@ -167,16 +183,22 @@ input s = Flux $ \_ -> do
 
 newtype Consumer o = Consumer (o -> IO (Consumer o))
 
+repeatC :: (o -> IO a) -> Consumer o
+repeatC f = Consumer $ \x -> f x >> pure (repeatC f)
+
+fluxC :: Flux o a -> Consumer o
+fluxC (Flux f) = Consumer $ \x -> fluxC . snd <$> f x
+
 (>>-) :: Flux i j -> Consumer j -> Consumer i
 (Flux f) >>- (Consumer c) = Consumer $ \x -> do
   (y, nextf) <- f x
   nextc <- c y
   pure (nextf >>- nextc)
 
-(*>>-) :: Flux i [j] -> Consumer j -> Consumer i
+(*>>-) :: (Foldable f) => Flux i (f j) -> Consumer j -> Consumer i
 (Flux f) *>>- c = Consumer $ \x -> do
   (y, nextf) <- f x
-  nextc <- process y c
+  nextc <- process (toList y) c
   pure (nextf *>>- nextc)
   where process :: [j] -> Consumer j -> IO (Consumer j)
         process (y:rst) (Consumer c) = c y >>= process rst

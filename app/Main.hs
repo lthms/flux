@@ -71,7 +71,7 @@ inputManagerCmd old new =
       else [])
 
 fromKeyboard :: Producer Cmd
-fromKeyboard = enumerate (keyboard *->> inputManager)
+fromKeyboard = enumP (keyboard *->> inputManager)
   where
     keyboard :: Producer (Maybe KeyboardEventData)
     keyboard = repeatP $ do
