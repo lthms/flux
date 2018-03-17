@@ -89,12 +89,10 @@ fromKeyboard = enumP (keyboard *->> inputManager)
       returnA -< inputManagerCmd man man'
 
 fromServer :: WS.Connection -> Producer Cmd
-fromServer ws = Producer $ do
-  msg <- WS.receiveData ws
-  pure (ServerNotification msg, fromServer ws)
+fromServer ws = repeatP $ ServerNotification <$> WS.receiveData ws
 
 toServer :: WS.Connection -> Consumer Cmd
-toServer ws = Consumer $ \x -> do
+toServer ws = repeatC $ \x ->
   case x of
     ChangeDirection U -> WS.sendTextData ws ("UP" :: Text)
     ChangeDirection D -> WS.sendTextData ws ("DOWN" :: Text)
@@ -103,13 +101,11 @@ toServer ws = Consumer $ \x -> do
     StartMoving       -> WS.sendTextData ws ("MOVE" :: Text)
     StopMoving        -> WS.sendTextData ws ("STOP" :: Text)
     _                 -> pure ()
-  pure (toServer ws)
 
 logger :: Consumer Cmd
-logger = Consumer $ \cmd -> do
+logger = repeatC $ \cmd -> do
   now <- getCurrentTime
   putStrLn $ "[" ++ show now ++ "]: " ++ show cmd
-  pure logger
 
 main :: IO ()
 main = withSocketsDo $ WS.runClient "demo.lkn.ist" 80 "/ws" $ \ws -> do
